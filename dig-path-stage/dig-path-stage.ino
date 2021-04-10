@@ -1,178 +1,257 @@
 #include <AccelStepper.h>
 #include <MultiStepper.h>
 
-#define stepsPerRevolution = 200;
+#define STEPS_PER_REVOLUTION 200
 
-#define m1pin1 4
-#define m1pin2 5
-#define m1pin3 6
-#define m1pin4 7
+#define M_X_PIN_1 8
+#define M_X_PIN_2 9
+#define M_X_PIN_3 10
+#define M_X_PIN_4 11
 
-#define m2pin1 8
-#define m2pin2 9
-#define m2pin3 10
-#define m2pin4 11
+#define M_Y_PIN_1 2
+#define M_Y_PIN_2 3
+#define M_Y_PIN_3 4
+#define M_Y_PIN_4 5
 
-#define lim1pow 2
-#define lim1sense 3
+#define LIM_X_POW 13
+#define LIM_X_SENSE 12
 
-#define lim2pow 12
-#define lim2sense 13
+#define LIM_Y_POW 7
+#define LIM_Y_SENSE 6
 
 #define ZEROING_SPEED 100
-#define maxStepperSpeed 200
+#define MAX_STEPPER_SPEED 200
 #define BUF_LEN 128
 
-AccelStepper stepper1(AccelStepper::FULL4WIRE, m1pin1, m1pin2, m1pin3, m1pin4);
-AccelStepper stepper2(AccelStepper::FULL4WIRE, m2pin1, m2pin2, m2pin3, m2pin4);
+AccelStepper stepperx(AccelStepper::FULL4WIRE, M_X_PIN_1, M_X_PIN_2, M_X_PIN_3, M_X_PIN_4);
+AccelStepper steppery(AccelStepper::FULL4WIRE, M_Y_PIN_1, M_Y_PIN_2, M_Y_PIN_3, M_Y_PIN_4);
 MultiStepper steppers;
-
-
 
 void find_zero() {
 
-  digitalWrite(lim1pow, HIGH); digitalWrite(lim2pow, HIGH);
+  Serial.write("Zeroing stage...\n");
 
-  int is_1_zero = digitalRead(lim1sense)==1;
-  int is_2_zero = digitalRead(lim2sense)==1;
+  digitalWrite(LIM_X_POW, HIGH); digitalWrite(LIM_Y_POW, HIGH);
 
-  stepper1.setSpeed(ZEROING_SPEED);
-  stepper2.setSpeed(ZEROING_SPEED);
+  int is_x_zero = digitalRead(LIM_X_SENSE)==1;
+  int is_y_zero = digitalRead(LIM_Y_SENSE)==1;
+
+  stepperx.setSpeed(ZEROING_SPEED);
+  steppery.setSpeed(ZEROING_SPEED);
   
-  while(!is_1_zero || !is_2_zero) {
+  while(!is_x_zero || !is_y_zero) {
 
-    if (!is_1_zero)
-      stepper1.runSpeed();
+    if (!is_x_zero)
+      stepperx.runSpeed();
 
-    if (!is_2_zero)
-      stepper2.runSpeed();
+    if (!is_y_zero)
+      steppery.runSpeed();
     
-    is_1_zero = digitalRead(lim1sense)==1;
-    is_2_zero = digitalRead(lim2sense)==1;
+    is_x_zero = digitalRead(LIM_X_SENSE)==1;
+    is_y_zero = digitalRead(LIM_Y_SENSE)==1;
     
   }
 
-  digitalWrite(lim1pow, LOW); digitalWrite(lim2pow, LOW);
+  digitalWrite(LIM_X_POW, LOW); digitalWrite(LIM_Y_POW, LOW);
 
-  set_rel_home();
+  stepperx.setCurrentPosition(0);
+  steppery.setCurrentPosition(0);
 
-  Serial.write("done\n");
+  Serial.write("Stage returned to zero and home coordinates set\n");
   
   return;
   
 }
 
-void set_rel_home() {
+void set_home() {
 
-  stepper1.setCurrentPosition(0);
-  stepper2.setCurrentPosition(0);
+  stepperx.setCurrentPosition(0);
+  steppery.setCurrentPosition(0);
 
-  Serial.write("done\n");
+  Serial.write("Home coordinates set\n");
   
 }
 
-void move_to_positions(char* position_str) {
+void go_home() {
+
+  char positions_cmd_str[BUF_LEN] = {'\0'};
+
+  sprintf(positions_cmd_str, "gohome 0 0");
+
+  move_to_positions(positions_cmd_str);
+
+  Serial.write("Stage returned to home coordinates\n");
+
+  return;
+  
+}
+
+void move_to_positions(char* positions_cmd_str) {
   
   long positions[2];
+
+  char output_line[BUF_LEN];
+  char flag = '\0';
   
-  Serial.println(position_str);
-  
-  sscanf(position_str, "%ld %ld", &positions[0], &positions[1]);
+  sscanf(positions_cmd_str, "%*s %ld %ld %c", &positions[0], &positions[1], &flag);
 
   positions[0] = -1*positions[0];
   positions[1] = -1*positions[1];
-  
-  Serial.println(positions[0]);
-  Serial.println(positions[1]);
 
   steppers.moveTo(positions);
   steppers.runSpeedToPosition();
 
-  Serial.println("done\n");
+  sprintf(output_line, "Stage moved to coordinates: %ld %ld\n", -1*positions[0], -1*positions[1]);
+
+  if (flag != 'q')
+    Serial.write(output_line);
   
 }
 
-void line_sweep(char *pattern_str) {
-  
-  long distances[2]; long step_size; long step_time;
-  
-  sscanf(pattern_str, "%ld %ld %ld %ld %d", &distances[0], &distances[1], &step_size, &step_time);
+void move_distances(char* distances_cmd_str) {
 
-  //set_rel_home();
+  long curr_positions[2]; long new_positions[2]; long distances[2];
+
+  char positions_cmd_str[BUF_LEN] = {'\0'};
+  char output_line[BUF_LEN] = {'\0'};
+  char flag = '\0';
+
+  sscanf(distances_cmd_str, "%*s %ld %ld %s", &distances[0], &distances[1], &flag);
+
+  curr_positions[0] = stepperx.currentPosition();
+  curr_positions[1] = steppery.currentPosition();
   
-  int num_steps = max(distances[0]/step_size, distances[1]/step_size);
-  
-  if (!((distances[0]==0) ^ (distances[1]==0)) || !num_steps) {
-    Serial.write("invalid format\n");
+  new_positions[0] = curr_positions[0] - distances[0];
+  new_positions[1] = curr_positions[1] - distances[1];
+
+  if (max(new_positions[0], new_positions[1])>0) {
+    Serial.write("Distances are invalid\n");
+    sprintf(output_line, "%ld %ld\n", new_positions[0], new_positions[1]);
+    Serial.write(output_line);
     return;
   }
 
-  long positions[num_steps][2];
-  positions[0][0] = -1*(distances[0]>0)*step_size + stepper1.currentPosition();
-  positions[0][1] = -1*(distances[1]>0)*step_size + stepper2.currentPosition();
+  steppers.moveTo(new_positions);
+  steppers.runSpeedToPosition();
+  
+  sprintf(output_line, "Stage moved distances: %ld %ld\n", distances[0], distances[1]);
 
-  Serial.write("trying\n");
+  if (flag != 'q')
+    Serial.write(output_line);
+  
+}
 
-  for (int i=1; i<num_steps; i++) {
-
-    positions[i][0] = -1*(distances[0]>0)*step_size + positions[i-1][0];
-    positions[i][1] = -1*(distances[1]>0)*step_size + positions[i-1][1];
-
-    Serial.print(positions[i][0]);
-    Serial.write("\t");
-    Serial.print(positions[i][1]);
-    Serial.write("\n");
-    
+void line_sweep(char *line_sweep_pattern_str) {
+  
+  long distances[2]; long curr_positions[2]; long new_positions[2];
+  long step_size; long step_time;
+  
+  char flag = '\0';
+  
+  sscanf(line_sweep_pattern_str, "%*s %ld %ld %ld %ld %c", &distances[0], &distances[1], &step_size, &step_time, &flag);
+  
+  int num_steps = max(distances[0]/step_size, distances[1]/step_size);
+  
+  if (!((distances[0]==0) ^ (distances[1]==0)) || !num_steps || !step_time) {
+    Serial.write("Invalid format for line sweep\n");
+    return;
   }
-
-  //long zeroes[2]; zeroes[0] = 0; zeroes[1] = 0;
-  //steppers.moveTo(zeroes);
-  //steppers.runSpeedToPosition();
+  
+  curr_positions[0] = stepperx.currentPosition();
+  curr_positions[1] = steppery.currentPosition();
+  
+  new_positions[0] = -1*(distances[0]>0)*step_size + stepperx.currentPosition();
+  new_positions[1] = -1*(distances[1]>0)*step_size + steppery.currentPosition();
 
   for (int i=0; i<num_steps; i++) {
-    
-    steppers.moveTo(positions[i]);
+
+    new_positions[0] = -1*(distances[0]>0)*step_size + curr_positions[0];
+    new_positions[1] = -1*(distances[1]>0)*step_size + curr_positions[1];
+
+    steppers.moveTo(new_positions);
     steppers.runSpeedToPosition();
+
+    curr_positions[0] = new_positions[0];
+    curr_positions[1] = new_positions[1];
 
     delay(step_time);
     
   }
 
-  Serial.write("done\n");
+  if (flag != 'q')
+    Serial.write("Line sweep completed successfully\n");
 
   return;
   
 }
 
-void raster_sweep(char *pattern_str) {
+void raster_sweep(char *raster_sweep_cmd_str) {
 
-  long distances[2]; long step_size; long step_time;
+  long distances[2]; long starting_pos[2];
+  long step_size; long step_time;
 
-  sscanf(pattern_str, "%ld %ld %ld %ld %d", &distances[0], &distances[1], &step_size, &step_time);
+  char line_sweep_cmd_str[BUF_LEN] = {'\0'};
+  char distances_cmd_str[BUF_LEN] = {'\0'};
+  char positions_cmd_str[BUF_LEN] = {'\0'};
+
+  sscanf(raster_sweep_cmd_str, "%*s %ld %ld %ld %ld %d", &distances[0], &distances[1], &step_size, &step_time);
 
   int num_x_steps = distances[0]/step_size;
   int num_y_steps = distances[1]/step_size;
 
+  starting_pos[0] = stepperx.currentPosition();
+  starting_pos[1] = steppery.currentPosition();
+  
   if (!num_x_steps || !num_y_steps) {
-    Serial.write("invalid format\n");
+    Serial.write("Invalid format for raster sweep\n");
     return;
   }
 
-  int anti_sweep_dir = num_x_steps>num_y_steps ? 1 : 0;
+  if (num_x_steps>num_y_steps) {
 
-  if (anti_sweep_dir) {
-
+    sprintf(line_sweep_cmd_str, "line %ld 0 %ld %ld q\n", distances[0], step_size, step_time);
     
+    for (int i=0; i<=num_y_steps; i++) {
+       
+      line_sweep(line_sweep_cmd_str);
 
+      if (i<num_y_steps) {
+        sprintf(positions_cmd_str, "positions %ld %ld q\n", starting_pos[0], starting_pos[1] + (i+1)*step_size);
+      } else {
+        sprintf(positions_cmd_str, "positions %ld %ld q\n", starting_pos[0], starting_pos[1]);
+      }
+      
+      move_to_positions(positions_cmd_str);
+
+      delay(step_time);
+      
+    }
+
+  } else {
+
+    sprintf(line_sweep_cmd_str, "line 0 %ld %ld %ld q\n", distances[0], step_size, step_time);
     
+    for (int i=0; i<=num_x_steps; i++) {
+      
+      line_sweep(line_sweep_cmd_str);
+
+      if (i<num_x_steps) {
+        sprintf(positions_cmd_str, "positions %ld %ld q\n", starting_pos[0] + (i+1)*step_size, starting_pos[0]);
+      } else {
+        sprintf(positions_cmd_str, "positions %ld %ld q\n", starting_pos[0], starting_pos[1]);
+      }
+      
+      move_to_positions(positions_cmd_str);
+
+      delay(step_time);
+      
+    }
     
   }
-
   
+  Serial.write("Raster sweep completed successfully\n");
 
-  
-
-  set_rel_home();
+  return;
   
 }
 
@@ -184,56 +263,57 @@ void setup() {
     delay(5);
   }
 
-  stepper1.setMaxSpeed(200);
-  stepper2.setMaxSpeed(200);
+  stepperx.setMaxSpeed(200);
+  steppery.setMaxSpeed(200);
 
-  stepper1.setMinPulseWidth(25);
-  stepper2.setMinPulseWidth(25);
+  stepperx.setMinPulseWidth(50);
+  steppery.setMinPulseWidth(50);
 
-  steppers.addStepper(stepper1);
-  steppers.addStepper(stepper2);
+  steppers.addStepper(stepperx);
+  steppers.addStepper(steppery);
 
-  pinMode(lim1pow, OUTPUT); pinMode(lim2pow, OUTPUT);
-  pinMode(lim1sense, INPUT); pinMode(lim2sense, INPUT);
+  pinMode(LIM_X_POW, OUTPUT); pinMode(LIM_Y_POW, OUTPUT);
+  pinMode(LIM_X_SENSE, INPUT); pinMode(LIM_Y_SENSE, INPUT);
 
 }
 
 void loop() {
   
   char rec_line[BUF_LEN] = {'\0'};
+  char cmd_type_str[BUF_LEN] = {'\0'};
   
   if (Serial.available() > 0) {
 
     while(Serial.readBytesUntil('\n', rec_line, BUF_LEN-1)) {
 
-      if(rec_line[0] == 'z') {
-        Serial.write("going to absolute zero\n"); Serial.flush();
+      for (int i=0; isalpha(rec_line[i]) && i<BUF_LEN-1; i++) {
+        cmd_type_str[i] = rec_line[i];
+      }
+
+      if (!strcmp(cmd_type_str, "zero")) {
         find_zero();
+      } else if (!strcmp(cmd_type_str, "sethome")) {
+         set_home();
+      } else if (!strcmp(cmd_type_str, "gohome")) {
+        go_home();
+      } else if (!strcmp(cmd_type_str, "position")) {
+        move_to_positions(rec_line);
+      } else if (!strcmp(cmd_type_str, "distances")) {
+        move_distances(rec_line);
+      } else if (!strcmp(cmd_type_str, "line")) {
+        line_sweep(rec_line);
+      } else if (!strcmp(cmd_type_str, "raster")) {
+        raster_sweep(rec_line);
+      } else {
+        Serial.write("Invalid command\n");
       }
 
-      if (rec_line[0] == 's') {
-        Serial.write("set current position as relative home\n");
-        set_rel_home();
-      }
-
-      if (rec_line[0] == 'm') {
-        Serial.write("moving to target locations\n");
-        move_to_positions(&rec_line[1]);
-      }
-
-      if(rec_line[0] == 'l') {
-        Serial.write("starting linear sweep\n");
-        line_sweep(&rec_line[1]);
-      }
-
-      if(rec_line[0] == 'r') {
-        Serial.write("starting raster sweep\n");
-        raster_sweep(&rec_line[0]);
-      }
+      memset(rec_line, 0, BUF_LEN);
+      memset(cmd_type_str, 0, BUF_LEN);
       
     }
+    
   }
-
   
   delay(100);
 
