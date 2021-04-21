@@ -199,22 +199,22 @@ void raster_sweep(char *raster_sweep_cmd_str) {
   int num_x_steps = distances[0]/step_size;
   int num_y_steps = distances[1]/step_size;
 
-  starting_pos[0] = stepperx.currentPosition();
-  starting_pos[1] = steppery.currentPosition();
+  starting_pos[0] = -1*stepperx.currentPosition();
+  starting_pos[1] = -1*steppery.currentPosition();
   
   if (!num_x_steps || !num_y_steps) {
     Serial.write("Invalid format for raster sweep\n");
     return;
   }
 
-  if (num_x_steps>num_y_steps) {
+  if (num_x_steps>=num_y_steps) {
 
     sprintf(line_sweep_cmd_str, "line %ld 0 %ld %ld q\n", distances[0], step_size, step_time);
     
     for (int i=0; i<=num_y_steps; i++) {
        
       line_sweep(line_sweep_cmd_str);
-
+      
       if (i<num_y_steps) {
         sprintf(positions_cmd_str, "positions %ld %ld q\n", starting_pos[0], starting_pos[1] + (i+1)*step_size);
       } else {
@@ -250,6 +250,12 @@ void raster_sweep(char *raster_sweep_cmd_str) {
   }
   
   Serial.write("Raster sweep completed successfully\n");
+
+  return;
+  
+}
+
+void led_control(char* led_control_cmd_str) {
 
   return;
   
@@ -304,6 +310,8 @@ void loop() {
         line_sweep(rec_line);
       } else if (!strcmp(cmd_type_str, "raster")) {
         raster_sweep(rec_line);
+      } else if (!strcmp(cmd_type_str, "led")) {
+        led_control(rec_line);
       } else {
         Serial.write("Invalid command\n");
       }
