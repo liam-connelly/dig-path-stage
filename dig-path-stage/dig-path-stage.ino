@@ -3,15 +3,15 @@
 
 #define STEPS_PER_REVOLUTION 200
 
-#define M_X_PIN_1 8
-#define M_X_PIN_2 9
-#define M_X_PIN_3 10
-#define M_X_PIN_4 11
+#define M_X_PIN_1 2
+#define M_X_PIN_2 3
+#define M_X_PIN_3 4
+#define M_X_PIN_4 5
 
-#define M_Y_PIN_1 2
-#define M_Y_PIN_2 3
-#define M_Y_PIN_3 4
-#define M_Y_PIN_4 5
+#define M_Y_PIN_1 8
+#define M_Y_PIN_2 9
+#define M_Y_PIN_3 10
+#define M_Y_PIN_4 11
 
 #define LIM_X_POW 13
 #define LIM_X_SENSE 12
