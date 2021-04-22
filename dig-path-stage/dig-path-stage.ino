@@ -1,5 +1,6 @@
 #include <AccelStepper.h>
 #include <MultiStepper.h>
+#include <Adafruit_DotStar.h>
 
 #define STEPS_PER_REVOLUTION 200
 
@@ -23,9 +24,16 @@
 #define MAX_STEPPER_SPEED 200
 #define BUF_LEN 128
 
+#define LED_POW 49
+#define LED_CLOCK 51
+#define LED_DATA 53
+#define NUM_LED_PIXELS 64
+
 AccelStepper stepperx(AccelStepper::FULL4WIRE, M_X_PIN_1, M_X_PIN_2, M_X_PIN_3, M_X_PIN_4);
 AccelStepper steppery(AccelStepper::FULL4WIRE, M_Y_PIN_1, M_Y_PIN_2, M_Y_PIN_3, M_Y_PIN_4);
 MultiStepper steppers;
+
+Adafruit_DotStar led_array(NUM_LED_PIXELS, LED_DATA, LED_CLOCK, DOTSTAR_BRG); 
 
 void find_zero() {
 
@@ -257,6 +265,21 @@ void raster_sweep(char *raster_sweep_cmd_str) {
 
 void led_control(char* led_control_cmd_str) {
 
+  int led_on;
+  uint32_t color = 0xFFFFFF;
+
+  sscanf(led_control_cmd_str, "%*s %d", &led_on);
+
+  if (led_on) {
+    led_array.fill(color, 0, NUM_LED_PIXELS);
+    Serial.write("LED is on\n");
+  } else {
+    led_array.clear();
+    Serial.write("LED is off\n");
+  }
+
+  led_array.show();
+  
   return;
   
 }
@@ -277,6 +300,9 @@ void setup() {
 
   steppers.addStepper(stepperx);
   steppers.addStepper(steppery);
+
+  pinMode(LED_POW, OUTPUT); digitalWrite(LED_POW, HIGH);
+  led_array.begin(); led_array.show();
 
   pinMode(LIM_X_POW, OUTPUT); pinMode(LIM_Y_POW, OUTPUT);
   pinMode(LIM_X_SENSE, INPUT); pinMode(LIM_Y_SENSE, INPUT);
